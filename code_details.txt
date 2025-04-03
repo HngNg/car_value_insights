@@ -1,0 +1,70 @@
+Vietnamese car buyers face unique challenges that simple filters can't address:
+
+- Cultural considerations around "face" and status that vary by region and social circle
+- Complex family usage patterns (extended family considerations)
+- Regional-specific needs (flooding concerns in certain areas, road quality variations)
+- Nuanced budget considerations due to Vietnam's financing and taxation structure
+
+To address the challenge, I propose a car recommendation system that uses LLMs (specifically Ollama running a Qwen 2.5 model) for generating personalized recommendations. Let me identify the main components and functionality:
+
+1. **OllamaClient**: Client for interacting with a local Ollama API running Qwen 2.5 7B Instruct
+    - generate()  will get the prompt and setting, format them to JSON, then inference the model hosted on Ollama using POST request
+    - extract_user_needs() will get the free text prompt and structured prompt from user, then send their combination with a system prompt to the model. The goal is use the model for analyzing and extracting user’s needs into categories
+    - generate_explanation() will be used for explain the choice of car that the matcher recommended, given the car details and user profile. The function do it by organize these details into a prompt and ask the model to explain the choice
+    - 
+2. **CarDataProcessor**: Processes and prepares car data for the recommendation system
+    - The flow of processing data is placed in the __init__():
+        - Loads from CSV
+        - Cleans and prepares data
+        - Creates embeddings for cars using a sentence transformer
+        - Builds a FAISS index for similarity search
+    - load_from_cache() will check if the data in csv file is newer than the data in cache, which ensures scalability. From the cache I extract data and recreate FAISS (similarity search) index since it can not be turn into a pkl file
+    - save_to_cache() will create a dictionary with all the data to cache. As mentioned, FAISS index can not be turn into a pkl file so I decided to not cache it
+    - prepare_data() function helps clean and prepare data
+    - _create_car_description() helps create a descriptive text (string) for a car based on its attributes. This string is then added to a column in Dataframe (pandas.df) of the class for embedding usage.
+    - create_embeddings() utilize the descriptions from _create_car_description() and SentenceTransformer to create embeddings for car descriptions. These embeddings are then stack together and add into the FAISS index for future similarity search.
+        - About FAISS:  FAISS is specialized for finding similar vectors quickly within a large collection. In FAISS, an "index" is an object that holds the vectors and is structured optimally for the search process. L2 represents that this index search using Euclidean Distance.
+3. **UserNeedsProcessor**: Processes user input to extract needs and preferences
+    
+    In the process_user_input() function:
+    
+    - extract_user_needs() function in OllamaClient class is used for extracting user needs in the provided free text.
+    - The sentence transformer model is used for transforming these needs into embeddings
+    - The function then builds a query by appending text fragments based on the structured input:
+        - Budget:
+            - If the maximum budget is high (over 1 billion VND), it emphasizes premium luxury options and sets a luxury flag.
+            - Otherwise, it creates a query string that specifies the maximum price.
+        - Family Size:
+            - For larger families (more than 5), it notes the need for a large car with many seats.
+            - For smaller families, it specifies the minimum number of seats.
+        - Primary Usage:
+            
+            Depending on whether the car will be used mostly in the city, on the highway, for mixed use, or off-road, the function adds phrases to describe the needs.
+            
+        - Region-Specific Needs:
+            
+            Adjusting the query based on regional conditions, such as navigating busy streets, handling flooded roads, or dealing with mountainous terrain.
+            
+        - Luxury and Specific Concerns:
+            
+            A list of luxury-related keywords (in both Vietnamese and English) is used to scan the free-text. If any keyword is found, the function ensures that the "luxury" score is high (at least 0.9) and marks the profile with a “luxury_preference" flag. If a luxury preference is detected or if there are specific concerns mentioned by Qwen 2.5, these are added to the query to further refine the search.
+            
+    - All the constructed query fragments are combined into a single string, and an embedding is generated for this query.
+    - At this point, user’s profile is enriched and ready for future uses.
+4. **PersonalizedMatcher**: PyTorch model for matching users with cars
+    
+    The purpose of this model is to create a latent space where user preferences and car features are transformed into representations that can be directly compared 
+    
+    - Encodes the user and car embeddings (features) into a latent space using  encoder networks that have similar architecture (to represent these features in the same space).
+    - User features are expanded to match car features, then they are concatenated to create a combined representation
+    - Predicts a match score using a matcher network that input combined features and outputs a value between 0 and 1.
+5. **DeepMatchRecommender**: Main recommendation engine
+    - _filter_by_constraints()  filters a DataFrame of cars based on the set of  constraints specified in the user's profile:
+        - budget_max limits maximum price, if user prefer luxury options then set a minimum price
+        - family_size is to ensure that the car has enough seats
+        - car_type_preference, transmission, age are features for user’s specific requirements
+        - This function also specify luxury brands and premium (non-luxury) brands
+    - generate_diverse_explanations(): Create the system prompt with focus instruction based on index of recommended cars and generate the explanation for the car choice
+    - _diversify_recommendations(): We select top recommended car first, then iterate through remaining cars and select diverse options until we have enough recommendation
+    - _prepare_recommendations(): We extract the details of each recommended car and call the generative_diverse_explanation() for each of them.
+    - recommend_cars(): First we filter cars based on user constraints and set the “relax” parameter if there is no match after filtering. For luxury preference, we prioritize prices to match the budget better. At this point, we already have the filtered Dataframe of recommended cars. We the turn them into embeddings and get embedding-based recommendations using FAISS index. For luxury cases we boost the score for luxury brands by 50%.
