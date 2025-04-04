@@ -157,7 +157,7 @@ class DeepMatchRecommender:
         # Return the filtered dataframe
         return filtered_df
 
-    def recommend_cars(self, user_profile: Dict, top_k: int = 5) -> List[Dict]:
+    def recommend_cars(self, user_profile: Dict, top_k: int = 3) -> List[Dict]:
         """
         Recommend cars based on user profile with diversity enforcement
 

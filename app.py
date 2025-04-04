@@ -90,7 +90,7 @@ def get_recommendations(
     # Process user input and get recommendations
     try:
         user_profile = user_processor.process_user_input(structured_input, free_text)
-        recommendations = recommender.recommend_cars(user_profile, top_k=5)
+        recommendations = recommender.recommend_cars(user_profile, top_k=3)
         
         if not recommendations:
             return "No matching cars found for the given criteria. Try relaxing some constraints."
