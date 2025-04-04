@@ -72,11 +72,7 @@ The system consists of five main components:
 
    #### Option A: Conda Environment
    ```bash
-   # Method 1: Using environment.yml (recommended)
-   conda env create -f environment.yml
-   conda activate car-insights
-   
-   # Method 2: Manual creation
+   # Create Conda Environment
    conda create -n car-insights python=3.8
    conda activate car-insights
 
